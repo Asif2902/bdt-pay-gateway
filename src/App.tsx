@@ -5,8 +5,9 @@ import OnboardingPage from '@/pages/OnboardingPage';
 import DashboardPage from '@/pages/DashboardPage';
 import CheckoutPage from '@/pages/CheckoutPage';
 import AdminPage from '@/pages/AdminPage';
+import AdminLoginPage from '@/pages/AdminLoginPage';
 
-function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuthProvider();
   if (auth.loading) {
     return (
@@ -16,7 +17,6 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
     );
   }
   if (!auth.user) return <Navigate to="/auth" replace />;
-  if (adminOnly && auth.profile?.role === 'merchant') return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -30,17 +30,16 @@ function AppRoutes() {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/pay/:invoiceId" element={<CheckoutPage />} />
 
+        {/* Admin — standalone password auth, no Supabase required */}
+        <Route path="/admin-login" element={<AdminLoginPage />} />
+        <Route path="/admin/*" element={<AdminPage />} />
+
         {/* Merchant-protected */}
         <Route path="/onboarding" element={
           <ProtectedRoute><OnboardingPage /></ProtectedRoute>
         } />
         <Route path="/dashboard/*" element={
           <ProtectedRoute><DashboardPage /></ProtectedRoute>
-        } />
-
-        {/* Admin-protected */}
-        <Route path="/admin/*" element={
-          <ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>
         } />
 
         {/* Default redirect */}

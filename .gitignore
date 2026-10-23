@@ -42,6 +42,9 @@ traces.jsonl
 cache/fuzz/
 cache/test-failures
 
+# SQLite admin DB (contains session JWTs — never commit)
+data/
+
 # Bun
 .bun-version-cache
 

@@ -10,6 +10,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import { createClient } from '@supabase/supabase-js';
 import { merchantRouter } from './routes/merchants';
 import { invoiceRouter } from './routes/invoices';
@@ -17,6 +18,7 @@ import { paymentRouter } from './routes/payments';
 import { ledgerRouter } from './routes/ledger';
 import { payoutRouter } from './routes/payouts';
 import { adminRouter } from './routes/admin';
+import { adminAuthRouter } from './routes/adminAuth';
 import { publicRouter } from './routes/public';
 import { errorHandler } from './middleware/errorHandler';
 import { requireAuth } from './middleware/auth';
@@ -68,6 +70,7 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '50kb' }));
+app.use(cookieParser());
 
 // Global rate limiter
 app.use(rateLimit({
@@ -92,13 +95,18 @@ const strictLimit = rateLimit({
 // Public routes (no auth required)
 app.use('/api/public', strictLimit, publicRouter);
 
-// Protected routes
+// Admin auth (password-based, separate from Supabase — no requireAuth)
+app.use('/api/admin-auth', strictLimit, adminAuthRouter);
+
+// Admin routes (protected by requireAdminAuth inside adminRouter)
+app.use('/api/admin', adminRouter);
+
+// Merchant-facing protected routes (Supabase JWT)
 app.use('/api/merchants', requireAuth, merchantRouter);
 app.use('/api/invoices', requireAuth, invoiceRouter);
 app.use('/api/payments', requireAuth, strictLimit, paymentRouter);
 app.use('/api/ledger', requireAuth, ledgerRouter);
 app.use('/api/payouts', requireAuth, payoutRouter);
-app.use('/api/admin', requireAuth, adminRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {
