@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import { getDb, newId, initDb, escapeLike } from '../lib/db';
-import { withPublic, withAuth, withAdmin, type AuthedRequest } from '../lib/middleware';
+import { withAuth, withAdmin, type AuthedRequest } from '../lib/middleware';
 import {
   loginUser, registerUser, signMerchantToken, getUserById,
   verifyAdminPassword, signAdminToken, verifyAdminToken,
@@ -520,8 +520,17 @@ const handleAdminAudit = withAdmin(async (req: VercelRequest, res: VercelRespons
 });
 
 // ─── Main dispatcher ──────────────────────────────────────────────────────────
+// Plain export — each sub-handler carries its own withAuth/withAdmin/withPublic
+// wrapper. Wrapping the dispatcher too causes double CORS header writes and
+// double initDb calls that break Vercel's response lifecycle.
 
-export default withPublic(async (req: VercelRequest, res: VercelResponse) => {
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  // CORS preflight — handle before any routing so OPTIONS never 404s
+  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGINS ?? '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+
   await initDb();
 
   const segments = (req.query?.route as string[] | undefined) ?? [];
@@ -573,4 +582,4 @@ export default withPublic(async (req: VercelRequest, res: VercelResponse) => {
   if (path === '/admin/audit') return handleAdminAudit(req, res);
 
   notFound(res);
-});
+}

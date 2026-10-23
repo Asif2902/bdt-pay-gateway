@@ -1,11 +1,11 @@
 /**
  * Auth middleware helpers for Vercel API routes.
- * Extract + verify JWT from Authorization header.
+ * CORS and initDb are handled once by the catch-all dispatcher in api/[...route].ts.
+ * These wrappers only verify JWTs and attach identity to the request.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyMerchantToken, verifyAdminToken, type MerchantTokenPayload } from './auth';
-import { initDb } from './db';
 
 export interface AuthedRequest extends VercelRequest {
   userId: string;
@@ -13,19 +13,11 @@ export interface AuthedRequest extends VercelRequest {
   userRole: string;
 }
 
-/** Wrap a Vercel handler with merchant JWT auth. */
+/** Wrap a handler with merchant JWT auth. */
 export function withAuth(
   handler: (req: AuthedRequest, res: VercelResponse) => Promise<void>,
 ) {
   return async (req: VercelRequest, res: VercelResponse): Promise<void> => {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGINS ?? '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-    if (req.method === 'OPTIONS') { res.status(200).end(); return; }
-
-    await initDb();
-
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       res.status(401).json({ success: false, error: 'Missing authentication token' });
@@ -44,18 +36,11 @@ export function withAuth(
   };
 }
 
-/** Wrap a Vercel handler with admin JWT auth. */
+/** Wrap a handler with admin JWT auth. */
 export function withAdmin(
   handler: (req: VercelRequest, res: VercelResponse) => Promise<void>,
 ) {
   return async (req: VercelRequest, res: VercelResponse): Promise<void> => {
-    res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGINS ?? '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-    if (req.method === 'OPTIONS') { res.status(200).end(); return; }
-
-    await initDb();
-
     const authHeader = req.headers.authorization;
     const cookieToken = parseCookieToken(req.headers.cookie);
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : cookieToken;
@@ -73,16 +58,14 @@ export function withAdmin(
   };
 }
 
-/** Wrap a public Vercel handler (no auth, just CORS + initDb). */
+/**
+ * withPublic — kept for compatibility but is now a no-op wrapper.
+ * CORS and initDb are handled by the dispatcher; this just calls the handler.
+ */
 export function withPublic(
   handler: (req: VercelRequest, res: VercelResponse) => Promise<void>,
 ) {
   return async (req: VercelRequest, res: VercelResponse): Promise<void> => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-    if (req.method === 'OPTIONS') { res.status(200).end(); return; }
-    await initDb();
     await handler(req, res);
   };
 }
