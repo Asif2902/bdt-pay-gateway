@@ -1,64 +1,108 @@
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function AuthPage() {
-  const { user } = useAuth();
+  const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (user) void navigate('/dashboard');
-  }, [user, navigate]);
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (mode === 'login') {
+        await signIn(email, password);
+      } else {
+        await signUp(email, password, fullName || undefined);
+      }
+      void navigate('/dashboard');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="min-h-dvh bg-slate-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-navy-900 mb-4"
-               style={{ background: '#0f1a2e' }}>
-            <span className="text-2xl font-bold text-white font-mono">৳</span>
+    <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4" style={{ fontFamily: 'DM Sans, sans-serif' }}>
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-2.5 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center">
+            <span className="text-white text-lg font-bold font-mono">৳</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Space Grotesk, sans-serif', letterSpacing: '-0.02em' }}>
-            BDT Pay Gateway
+          <span className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>BDT Pay</span>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
+          <h1 className="text-xl font-bold text-slate-900 mb-1" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+            {mode === 'login' ? 'Sign in' : 'Create account'}
           </h1>
-          <p className="text-slate-500 mt-1 text-sm">Accept USDC payments, receive BDT</p>
-        </div>
+          <p className="text-sm text-slate-500 mb-6">
+            {mode === 'login' ? 'Welcome back to your merchant portal.' : 'Start accepting USDC payments today.'}
+          </p>
 
-        {/* Auth card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <Auth
-            supabaseClient={supabase}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: '#0f1a2e',
-                    brandAccent: '#1e3a5f',
-                  },
-                  radii: {
-                    borderRadiusButton: '10px',
-                    inputBorderRadius: '10px',
-                  },
-                },
-              },
-              className: {
-                button: 'font-medium',
-                input: 'text-sm',
-              },
-            }}
-            providers={[]}
-            redirectTo={window.location.origin + '/dashboard'}
-          />
-        </div>
+          <form onSubmit={(e) => { void handleSubmit(e); }} className="space-y-4">
+            {mode === 'register' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Full name</label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your name"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 bg-white"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Email address</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+              <input
+                type="password"
+                required
+                minLength={mode === 'register' ? 8 : 1}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === 'register' ? 'At least 8 characters' : '••••••••'}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 bg-white"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 disabled:opacity-60 transition-colors"
+            >
+              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+            </button>
+          </form>
 
-        <p className="text-center text-xs text-slate-400 mt-6">
-          Payments settle on Arc Mainnet (USDC). BDT payouts are manual.
-        </p>
+          <p className="mt-5 text-center text-sm text-slate-500">
+            {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
+            <button
+              onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); }}
+              className="font-semibold text-slate-900 hover:underline"
+            >
+              {mode === 'login' ? 'Register' : 'Sign in'}
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );

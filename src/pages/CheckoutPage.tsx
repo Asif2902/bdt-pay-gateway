@@ -119,7 +119,7 @@ export default function CheckoutPage() {
   async function handlePay() {
     if (!contractAddress || !invoice || !invoiceId) return;
     try {
-      const auth = await invoiceApi.getAuthorization(invoiceId);
+      const auth = await invoiceApi.authorize(invoiceId);
       setStatus('paying');
       writePay(
         {
@@ -128,13 +128,13 @@ export default function CheckoutPage() {
           functionName: 'payInvoice',
           args: [
             {
-              invoiceId: auth.invoiceId,
-              merchantId: auth.merchantId,
+              invoiceId: auth.invoiceId as `0x${string}`,
+              merchantId: auth.merchantId as `0x${string}`,
               amountUsdc: BigInt(auth.amountUsdc),
               expiry: BigInt(auth.expiry),
-              nonce: auth.nonce,
+              nonce: auth.nonce as `0x${string}`,
             },
-            auth.signature,
+            auth.signature as `0x${string}`,
           ],
         },
         {
@@ -142,7 +142,7 @@ export default function CheckoutPage() {
             setPayTxHash(h);
             setStatus('verifying');
             paymentApi
-              .verify({ tx_hash: h, invoice_id: invoiceId })
+              .verify({ tx_hash: h, invoice_id: invoiceId, payer_wallet_address: address ?? '0x0000000000000000000000000000000000000000' })
               .then(() => setStatus('success'))
               .catch((err: Error) => { setErrorMsg(err.message); setStatus('error'); });
           },

@@ -1,53 +1,40 @@
+/**
+ * Auth context — email+password JWT stored in localStorage.
+ * No Supabase dependency.
+ */
+
 import { useState, useEffect, createContext, useContext } from 'react';
-import { supabase } from '@/lib/supabase';
-import { merchantApi } from '@/lib/api';
-import type { Profile, Merchant } from '@/types';
-import type { User } from '@supabase/supabase-js';
+import { authApi, merchantApi } from '@/lib/api';
+import type { Merchant } from '@/types';
+
+interface User { id: string; email: string; role: string; }
 
 interface AuthContextValue {
   user: User | null;
-  profile: Profile | null;
   merchant: Merchant | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName?: string) => Promise<void>;
+  signOut: () => void;
   refreshMerchant: () => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextValue>({
-  user: null,
-  profile: null,
-  merchant: null,
-  loading: true,
-  signOut: async () => {},
-  refreshMerchant: async () => {},
-});
+export const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function useAuth() {
-  return useContext(AuthContext);
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthContext.Provider');
+  return ctx;
 }
 
 export function useAuthProvider(): AuthContextValue {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function loadProfile(u: User) {
-    try {
-      const result = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', u.id)
-        .single();
-      setProfile((result.data as Profile | null) ?? null);
-    } catch {
-      setProfile(null);
-    }
-  }
-
   async function loadMerchant() {
     try {
-      const data = await merchantApi.getOwn();
+      const data = await merchantApi.get();
       setMerchant(data);
     } catch {
       setMerchant(null);
@@ -55,42 +42,40 @@ export function useAuthProvider(): AuthContextValue {
   }
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        void Promise.all([loadProfile(u), loadMerchant()]).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        void loadProfile(u);
-        void loadMerchant();
-      } else {
-        setProfile(null);
-        setMerchant(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    const token = localStorage.getItem('auth_token');
+    if (!token) { setLoading(false); return; }
+    authApi.me()
+      .then(({ user: u }) => {
+        setUser(u);
+        return loadMerchant();
+      })
+      .catch(() => { localStorage.removeItem('auth_token'); })
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return {
-    user,
-    profile,
-    merchant,
-    loading,
-    signOut: async () => {
-      await supabase.auth.signOut();
-      setUser(null);
-      setProfile(null);
-      setMerchant(null);
-    },
-    refreshMerchant: loadMerchant,
-  };
+  async function signIn(email: string, password: string) {
+    const { token, user: u } = await authApi.login(email, password);
+    localStorage.setItem('auth_token', token);
+    setUser(u);
+    await loadMerchant();
+  }
+
+  async function signUp(email: string, password: string, fullName?: string) {
+    const { token, user: u } = await authApi.register(email, password, fullName);
+    localStorage.setItem('auth_token', token);
+    setUser(u);
+  }
+
+  function signOut() {
+    localStorage.removeItem('auth_token');
+    setUser(null);
+    setMerchant(null);
+  }
+
+  async function refreshMerchant() {
+    await loadMerchant();
+  }
+
+  return { user, merchant, loading, signIn, signUp, signOut, refreshMerchant };
 }

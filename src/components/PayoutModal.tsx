@@ -32,7 +32,13 @@ export default function PayoutModal({ balance, merchant, onClose, onRequested }:
 
     setLoading(true);
     try {
-      await payoutApi.request({ amount_bdt_poisha: amountPoisha });
+      await payoutApi.request({
+        amount_bdt_poisha: amountPoisha,
+        payout_method: merchant.payout_method ?? 'other',
+        payout_account_name: merchant.payout_account_name ?? '',
+        payout_account_number: merchant.payout_account_number ?? '',
+        payout_bank_name: merchant.payout_bank_name ?? undefined,
+      });
       toast.success('Payout requested. An operator will process it shortly.');
       onRequested();
     } catch (err) {

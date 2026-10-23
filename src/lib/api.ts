@@ -1,205 +1,174 @@
-// ============================================================
-// Frontend API client — calls the Express backend via Vite proxy
-// All requests go to /api/* which Vite proxies to the Express server
-// ============================================================
-import type {
-  ApiResponse,
-  CreateMerchantRequest,
-  UpdateMerchantRequest,
-  UpdatePayoutDetailsRequest,
-  CreateInvoiceRequest,
-  CreateInvoiceResponse,
-  VerifyPaymentRequest,
-  CreatePayoutRequest,
-  ConfirmPayoutRequest,
-  Invoice,
-  Payment,
-  MerchantLedgerEntry,
-  Payout,
-  Merchant,
-  PublicMerchant,
-  Profile,
-  InvoiceAuthorization,
-} from '@/types';
-import { supabase } from './supabase';
+/**
+ * Typed API client for all backend routes (Vercel API functions).
+ * Auth token stored in localStorage under 'auth_token'.
+ */
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (session?.access_token) {
-    headers['Authorization'] = `Bearer ${session.access_token}`;
-  }
-  return headers;
+import type {
+  Merchant, Invoice, Payment, LedgerEntry, Payout,
+  CreateInvoiceRequest,
+} from '@/types';
+
+const BASE = '/api';
+
+function getToken(): string | null {
+  return localStorage.getItem('auth_token');
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = await authHeaders();
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: { ...headers, ...(init?.headers ?? {}) },
-  });
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!json.success || !res.ok) {
-    throw new Error(json.error ?? `Request failed: ${res.status}`);
-  }
+async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const json = await res.json() as { success: boolean; data?: T; error?: string };
+  if (!json.success) throw new Error(json.error ?? `API error ${res.status}`);
   return json.data as T;
 }
 
-// ============================================================
-// MERCHANT
-// ============================================================
-
-export const merchantApi = {
-  create: (body: CreateMerchantRequest) =>
-    apiFetch<Merchant>('/merchants', { method: 'POST', body: JSON.stringify(body) }),
-
-  getOwn: () => apiFetch<Merchant>('/merchants/me'),
-
-  update: (body: UpdateMerchantRequest) =>
-    apiFetch<Merchant>('/merchants/me', { method: 'PATCH', body: JSON.stringify(body) }),
-
-  updatePayoutDetails: (body: UpdatePayoutDetailsRequest) =>
-    apiFetch<{ ok: boolean }>('/merchants/me/payout-details', {
-      method: 'PUT',
-      body: JSON.stringify(body),
+// ---- Auth ----
+export const authApi = {
+  register: (email: string, password: string, fullName?: string) =>
+    apiFetch<{ token: string; user: { id: string; email: string; role: string } }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, full_name: fullName }),
     }),
-
-  getBySlug: (slug: string) => apiFetch<PublicMerchant>(`/public/merchants/${slug}`),
+  login: (email: string, password: string) =>
+    apiFetch<{ token: string; user: { id: string; email: string; role: string } }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+  me: () => apiFetch<{ user: { id: string; email: string; role: string } }>('/auth/me'),
 };
 
-// ============================================================
-// INVOICES
-// ============================================================
+// ---- Merchants ----
+export const merchantApi = {
+  get: () => apiFetch<Merchant | null>('/merchants'),
+  create: (data: Partial<Merchant>) =>
+    apiFetch<Merchant>('/merchants', { method: 'POST', body: JSON.stringify(data) }),
+  update: (data: Partial<Merchant>) =>
+    apiFetch<Merchant>('/merchants', { method: 'PUT', body: JSON.stringify(data) }),
+};
 
+// ---- Invoices ----
 export const invoiceApi = {
-  create: (body: CreateInvoiceRequest) =>
-    apiFetch<CreateInvoiceResponse>('/invoices', { method: 'POST', body: JSON.stringify(body) }),
-
-  list: (params?: { status?: string; page?: number }) => {
+  list: (params?: { page?: number; status?: string }) => {
     const q = new URLSearchParams();
-    if (params?.status) q.set('status', params.status);
     if (params?.page !== undefined) q.set('page', String(params.page));
+    if (params?.status) q.set('status', params.status);
     return apiFetch<{ invoices: Invoice[]; total: number }>(`/invoices?${q}`);
   },
-
   get: (id: string) => apiFetch<Invoice>(`/invoices/${id}`),
-
+  create: (data: CreateInvoiceRequest) =>
+    apiFetch<{ invoice: Invoice; checkout_url: string }>('/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   cancel: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/invoices/${id}/cancel`, { method: 'POST' }),
-
-  // Public endpoint — no auth required
-  getPublic: (id: string) => apiFetch<{ invoice: Invoice; merchant: PublicMerchant }>(`/public/invoices/${id}`),
-
-  // Get authorization for on-chain payment (signs with operator key)
-  getAuthorization: (id: string) => apiFetch<InvoiceAuthorization>(`/public/invoices/${id}/authorize`),
+    apiFetch<{ ok: boolean }>(`/invoices/${id}`, { method: 'POST' }),
+  getPublic: (id: string) =>
+    apiFetch<{ invoice: Invoice; merchant: Partial<Merchant> }>(`/public/invoice/${id}`),
+  authorize: (id: string) =>
+    apiFetch<{
+      invoiceId: string; merchantId: string; amountUsdc: string;
+      expiry: string; nonce: string; signature: string;
+    }>(`/public/invoice/${id}`, { method: 'POST' }),
 };
 
-// ============================================================
-// PAYMENTS
-// ============================================================
-
+// ---- Payments ----
 export const paymentApi = {
-  verify: (body: VerifyPaymentRequest) =>
-    apiFetch<Payment>('/payments/verify', { method: 'POST', body: JSON.stringify(body) }),
-
   list: (params?: { page?: number }) => {
     const q = new URLSearchParams();
     if (params?.page !== undefined) q.set('page', String(params.page));
     return apiFetch<{ payments: Payment[]; total: number }>(`/payments?${q}`);
   },
-
-  get: (id: string) => apiFetch<Payment>(`/payments/${id}`),
+  verify: (data: { invoice_id: string; tx_hash: string; payer_wallet_address: string }) =>
+    apiFetch<{ payment_id: string; amount_bdt_poisha: number; new_balance: number }>('/payments/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
-// ============================================================
-// LEDGER
-// ============================================================
-
+// ---- Ledger ----
 export const ledgerApi = {
-  getBalance: () => apiFetch<{ balance_poisha: number }>('/ledger/balance'),
-
+  balance: () => apiFetch<{ balance: number }>('/ledger?balance_only=true'),
   list: (params?: { page?: number }) => {
-    const q = new URLSearchParams();
+    const q = new URLSearchParams({ balance_only: 'false' });
     if (params?.page !== undefined) q.set('page', String(params.page));
-    return apiFetch<{ entries: MerchantLedgerEntry[]; total: number }>(`/ledger?${q}`);
+    return apiFetch<{ balance: number; entries: LedgerEntry[]; total: number }>(`/ledger?${q}`);
   },
 };
 
-// ============================================================
-// PAYOUTS
-// ============================================================
-
+// ---- Payouts ----
 export const payoutApi = {
-  request: (body: CreatePayoutRequest) =>
-    apiFetch<Payout>('/payouts', { method: 'POST', body: JSON.stringify(body) }),
-
-  list: (params?: { status?: string; page?: number }) => {
-    const q = new URLSearchParams();
-    if (params?.status) q.set('status', params.status);
-    if (params?.page !== undefined) q.set('page', String(params.page));
-    return apiFetch<{ payouts: Payout[]; total: number }>(`/payouts?${q}`);
-  },
-
-  get: (id: string) => apiFetch<Payout>(`/payouts/${id}`),
+  list: () => apiFetch<{ payouts: Payout[] }>('/payouts'),
+  request: (data: {
+    amount_bdt_poisha: number;
+    payout_method: string;
+    payout_account_name: string;
+    payout_account_number: string;
+    payout_bank_name?: string;
+  }) => apiFetch<{ payout: Payout }>('/payouts', { method: 'POST', body: JSON.stringify(data) }),
 };
 
-// ============================================================
-// ADMIN
-// ============================================================
-
+// ---- Admin API ----
 export const adminApi = {
-  listMerchants: (params?: { page?: number; search?: string }) => {
-    const q = new URLSearchParams();
-    if (params?.page !== undefined) q.set('page', String(params.page));
-    if (params?.search) q.set('search', params.search);
-    return apiFetch<{ merchants: (Merchant & { profile: Profile })[]; total: number }>(
-      `/admin/merchants?${q}`,
-    );
-  },
+  login: (password: string) =>
+    apiFetch<{ token: string }>('/admin/auth', { method: 'POST', body: JSON.stringify({ password }) }),
+  me: () => apiFetch<{ role: string }>('/admin/auth'),
+  logout: () => apiFetch<{ ok: boolean }>('/admin/auth', { method: 'DELETE' }),
 
+  listMerchants: (params?: { search?: string; page?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    if (params?.page !== undefined) q.set('page', String(params.page));
+    return apiFetchAdmin<{ merchants: unknown[]; total: number }>(`/admin/merchants?${q}`);
+  },
   suspendMerchant: (id: string, reason: string) =>
-    apiFetch<{ ok: boolean }>(`/admin/merchants/${id}/suspend`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    }),
-
+    apiFetchAdmin<{ ok: boolean }>(`/admin/merchants/${id}?action=suspend`, { method: 'POST', body: JSON.stringify({ reason }) }),
   activateMerchant: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/admin/merchants/${id}/activate`, { method: 'POST' }),
+    apiFetchAdmin<{ ok: boolean }>(`/admin/merchants/${id}?action=activate`, { method: 'POST' }),
 
-  listPayments: (params?: { page?: number; search?: string }) => {
+  listPayments: (params?: { search?: string; page?: number }) => {
     const q = new URLSearchParams();
-    if (params?.page !== undefined) q.set('page', String(params.page));
     if (params?.search) q.set('search', params.search);
-    return apiFetch<{ payments: Payment[]; total: number }>(`/admin/payments?${q}`);
+    if (params?.page !== undefined) q.set('page', String(params.page));
+    return apiFetchAdmin<{ payments: unknown[]; total: number }>(`/admin/payments?${q}`);
   },
 
-  listPendingPayouts: (params?: { page?: number }) => {
+  listPendingPayouts: () => apiFetchAdmin<{ payouts: Payout[] }>('/admin/payouts'),
+  initiateTransfer: (id: string) =>
+    apiFetchAdmin<{ ok: boolean }>(`/admin/payouts/${id}?action=initiate`, { method: 'POST' }),
+  confirmPayout: (id: string, data: { external_reference: string; external_timestamp: string; external_note?: string }) =>
+    apiFetchAdmin<{ ok: boolean }>(`/admin/payouts/${id}?action=confirm`, { method: 'POST', body: JSON.stringify(data) }),
+  cancelPayout: (id: string, reason: string) =>
+    apiFetchAdmin<{ ok: boolean }>(`/admin/payouts/${id}?action=cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  getAuditLogs: (page?: number) => {
     const q = new URLSearchParams();
-    if (params?.page !== undefined) q.set('page', String(params.page));
-    return apiFetch<{ payouts: Payout[]; total: number }>(`/admin/payouts/pending?${q}`);
-  },
-
-  initiateTransfer: (payoutId: string) =>
-    apiFetch<{ ok: boolean }>(`/admin/payouts/${payoutId}/initiate`, { method: 'POST' }),
-
-  confirmPayout: (payoutId: string, body: ConfirmPayoutRequest) =>
-    apiFetch<{ ok: boolean }>(`/admin/payouts/${payoutId}/confirm`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  cancelPayout: (payoutId: string, reason: string) =>
-    apiFetch<{ ok: boolean }>(`/admin/payouts/${payoutId}/cancel`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    }),
-
-  getAuditLogs: (params?: { page?: number; action?: string }) => {
-    const q = new URLSearchParams();
-    if (params?.page !== undefined) q.set('page', String(params.page));
-    if (params?.action) q.set('action', params.action);
-    return apiFetch<{ logs: unknown[]; total: number }>(`/admin/audit-logs?${q}`);
+    if (page !== undefined) q.set('page', String(page));
+    return apiFetchAdmin<{ logs: unknown[] }>(`/admin/audit?${q}`);
   },
 };
+
+function getAdminToken(): string | null {
+  return sessionStorage.getItem('admin_token');
+}
+
+async function apiFetchAdmin<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getAdminToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const json = await res.json() as { success: boolean; data?: T; error?: string };
+  if (!json.success) throw new Error(json.error ?? `API error ${res.status}`);
+  return json.data as T;
+}

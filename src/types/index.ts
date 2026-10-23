@@ -219,11 +219,13 @@ export interface ConfirmPayoutRequest {
 // ============================================================
 
 export interface AuthState {
-  user: import('@supabase/supabase-js').User | null;
-  profile: Profile | null;
+  user: { id: string; email: string; role: string } | null;
   merchant: Merchant | null;
   loading: boolean;
 }
+
+/** Alias for use in api.ts imports */
+export type LedgerEntry = MerchantLedgerEntry;
 
 export interface CheckoutState {
   merchant: PublicMerchant | null;

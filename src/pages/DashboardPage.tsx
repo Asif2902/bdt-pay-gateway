@@ -15,7 +15,7 @@ import PayoutModal from '@/components/PayoutModal';
 type Tab = 'overview' | 'invoices' | 'payments' | 'payouts' | 'settings';
 
 export default function DashboardPage() {
-  const { user, profile, merchant, signOut } = useAuth();
+  const { user, merchant, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>('overview');
   const [balance, setBalance] = useState(0);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -26,7 +26,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!merchant) return;
-    void ledgerApi.getBalance().then((r) => setBalance(r.balance_poisha));
+    void ledgerApi.balance().then((r) => setBalance(r.balance));
     void invoiceApi.list().then((r) => setInvoices(r.invoices));
     void ledgerApi.list().then((r) => setLedger(r.entries));
     void payoutApi.list().then((r) => setPayouts(r.payouts));
@@ -229,7 +229,7 @@ export default function DashboardPage() {
         )}
 
         {tab === 'settings' && (
-          <SettingsTab merchant={merchant} profile={profile} />
+          <SettingsTab merchant={merchant} userEmail={user?.email} />
         )}
       </main>
 
@@ -251,7 +251,7 @@ export default function DashboardPage() {
           onRequested={() => {
             setShowPayout(false);
             void payoutApi.list().then((r) => setPayouts(r.payouts));
-            void ledgerApi.getBalance().then((r) => setBalance(r.balance_poisha));
+            void ledgerApi.balance().then((r) => setBalance(r.balance));
           }}
         />
       )}
@@ -419,7 +419,7 @@ function PayoutsTab({
   );
 }
 
-function SettingsTab({ merchant, profile }: { merchant: { shop_name: string; slug: string; payout_method?: string | null; payout_account_name?: string | null }; profile: import('@/types').Profile | null }) {
+function SettingsTab({ merchant, userEmail }: { merchant: { shop_name: string; slug: string; payout_method?: string | null; payout_account_name?: string | null }; userEmail?: string }) {
   return (
     <div className="space-y-6 max-w-xl">
       <h2 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>Settings</h2>
@@ -428,7 +428,7 @@ function SettingsTab({ merchant, profile }: { merchant: { shop_name: string; slu
         <div className="text-sm space-y-2">
           <p><span className="text-slate-400">Name:</span> <span className="text-slate-900">{merchant.shop_name}</span></p>
           <p><span className="text-slate-400">Slug:</span> <span className="font-mono text-slate-900">{merchant.slug}</span></p>
-          <p><span className="text-slate-400">Email:</span> <span className="text-slate-900">{profile?.email}</span></p>
+          <p><span className="text-slate-400">Email:</span> <span className="text-slate-900">{userEmail}</span></p>
         </div>
       </div>
       <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">

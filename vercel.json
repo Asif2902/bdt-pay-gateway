@@ -1,0 +1,14 @@
+{
+  "buildCommand": "bunx vite build",
+  "outputDirectory": "dist",
+  "installCommand": "bun install",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "@vercel/node"
+    }
+  }
+}
