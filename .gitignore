@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+
+# Foundry build artifacts
+contracts/out/
+contracts/cache/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Circle credentials
+.circle/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime / sandbox artifacts
+console.jsonl
+traces.jsonl
+cache/fuzz/
+cache/test-failures
+
+# Bun
+.bun-version-cache
+
+# TypeScript
+*.tsbuildinfo
